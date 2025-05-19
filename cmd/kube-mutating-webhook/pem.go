@@ -11,8 +11,15 @@ import (
 	"github.com/jacobbrewer1/vaulty"
 	"github.com/jacobbrewer1/web"
 	"github.com/jacobbrewer1/web/k8s"
+	"github.com/jacobbrewer1/web/logging"
 )
 
+const (
+	// vaultPemExpiry is the lease duration that the PEM certificate is valid for.
+	vaultPemExpiry = 24 * time.Hour
+)
+
+// waitForPemExpiry is a task that monitors the expiry of the PEM certificate.
 func (a *App) waitForPemExpiry(l *slog.Logger) web.AsyncTaskFunc {
 	return func(ctx context.Context) {
 		l.Info("monitoring pem expiry")
@@ -22,12 +29,27 @@ func (a *App) waitForPemExpiry(l *slog.Logger) web.AsyncTaskFunc {
 
 		for {
 			select {
+			case <-ctx.Done():
+				l.Debug("context cancelled, stopping pem expiry monitoring")
+				return
 			case <-ticker.C:
+				// Check if the PEM certificate is about to expire
+				if err := a.reloadPemIfNeeded(
+					ctx,
+					l,
+					a.base.VaultClient(),
+					a.base.Viper().GetString("pem_path"),
+					vaultPemExpiry/2, // Give a window to reload the certificate in-case of server failures, etc.
+				); err != nil {
+					l.Error("failed to reload pem certificate", slog.String(logging.KeyError, err.Error()))
+					continue
+				}
 			}
 		}
 	}
 }
 
+// reloadPemIfNeeded checks if the PEM certificate is about to expire and reloads it if necessary.
 func (a *App) reloadPemIfNeeded(
 	ctx context.Context,
 	l *slog.Logger,
@@ -64,6 +86,7 @@ func (a *App) reloadPemIfNeeded(
 	return nil
 }
 
+// loadNewPem loads a new PEM certificate from Vault and updates the app configuration.
 func (a *App) loadNewPem(
 	ctx context.Context,
 	vaultClient vaulty.Client,
@@ -73,7 +96,7 @@ func (a *App) loadNewPem(
 
 	secret, err := vc.Logical().WriteWithContext(ctx, pemPath, map[string]any{
 		"common_name": fmt.Sprintf("%s.%s.svc", appName, k8s.DeployedNamespace()),
-		"ttl":         "24h",
+		"ttl":         vaultPemExpiry.String(),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to write pem secret: %w", err)
