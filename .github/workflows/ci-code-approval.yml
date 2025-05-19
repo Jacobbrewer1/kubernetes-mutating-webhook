@@ -38,11 +38,6 @@ jobs:
           go-version-file: 'go.mod'
           cache-dependency-path: "**/*.sum"
 
-      - name: "Configure git for private modules"
-        env:
-          GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: git config --global url."https://x:${GITHUB_API_TOKEN}@github.com".insteadOf "https://github.com"
-
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
@@ -62,110 +57,26 @@ jobs:
           go-version-file: 'go.mod'
           cache-dependency-path: "**/*.sum"
 
-      - name: Verify
-        run: go vet ./...
+      - name: Restore bazel cache
+        uses: actions/cache/restore@v4
+        with:
+          key: bazel
+          path: |
+            ~/.cache/bazel
 
-      - name: Test
-        run: go test -v ./...
-
-      - name: Run Mage
+      - name: Build and Test
         uses: magefile/mage-action@v3
         with:
           version: latest
-          args: deps
+          args: -v build test
 
-      - name: Import secrets
-        id: import-secrets
-        uses: hashicorp/vault-action@v3
-        with:
-          url: ${{ secrets.VAULT_ADDR }}
-          method: userpass
-          username: ${{ secrets.VAULT_USERNAME }}
-          password: ${{ secrets.VAULT_PASSWORD }}
-          secrets: |
-            ${{ secrets.VAULT_MOUNT }}/data/${{ secrets.VAULT_GCP_SA_NAME }} ${{ secrets.VAULT_GCP_SA_KEY }} | VAULT_GCP_SA_KEY ;
-
-      - name: Service Account File
-        id: service-account-file
-        run: |
-          echo '${{ steps.import-secrets.outputs.VAULT_GCP_SA_KEY }}' > ${{ github.workspace }}/gcp-sa-key.json
-
-      - name: Run Mage
-        uses: magefile/mage-action@v3
-        with:
-          version: latest
-          args: -v build:all
-        env:
-          'GOOGLE_APPLICATION_CREDENTIALS_JSON_PATH': ${{ github.workspace }}/gcp-sa-key.json
-
-      - name: Remove Service Account File
+      - name: Save bazel cache
+        uses: actions/cache/save@v4
         if: always()
-        run: |
-          rm -f ${{ github.workspace }}/gcp-sa-key.json
-
-  code-generation:
-    name: "Code Generation"
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
         with:
-          go-version-file: 'go.mod'
-          cache-dependency-path: "**/*.sum"
-
-      - name: Install deps
-        uses: magefile/mage-action@v3
-        with:
-          version: latest
-          args: installdeps
-
-      - name: Run Mage
-        uses: magefile/mage-action@v3
-        with:
-          version: latest
-          args: codegen:cicd
-
-  openapi-lint:
-    name: OpenAPI Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # Hide any previous plan comments from the Pull Request to keep things tidy
-      - id: hide_previous_plan
-        name: Hide previous plan
-        if: github.event_name == 'pull_request'
-        uses: kanga333/comment-hider@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          hide_user_name: "github-actions[bot]"
-          hide_reason: "OUTDATED"
-          leave_visible: 0 # leave the last 0 comments visible
-
-      - name: Install IBM OpenAPI Validator
-        run: |
-          npm install -g ibm-openapi-validator
-          npm install @ibm-cloud/openapi-ruleset
-
-      - name: Run Mage
-        uses: magefile/mage-action@v3
-        with:
-          version: latest
-          args: lint:apis
-
-      - name: Upload the report
-        # Run this step on all PR's even if the linting fails
-        if: ${{ failure() && github.event_name == 'pull_request' }}
-        uses: thollander/actions-comment-pull-request@v3
-        with:
-          # Full file path to the plan output
-          file-path: ${{ github.workspace }}/routes-validator-report.md
-          pr-number: ${{ github.event.pull_request.number }}
-          create-if-not-exists: true
+          key: bazel
+          path: |
+            ~/.cache/bazel
 
   diff:
     name: "Diff"
@@ -179,6 +90,13 @@ jobs:
         with:
           go-version-file: 'go.mod'
           cache-dependency-path: "**/*.sum"
+
+      - name: Restore bazel cache
+        uses: actions/cache/restore@v4
+        with:
+          key: bazel
+          path: |
+            ~/.cache/bazel
 
       - name: Run Mage
         uses: magefile/mage-action@v3
