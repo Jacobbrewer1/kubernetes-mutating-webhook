@@ -1,0 +1,91 @@
+{{ $authedExists := false }}
+{{ $unauthedExists := false }}
+{{ range . }}
+    {{ $auth := .Spec.Security }}
+    {{ if $auth }}
+        {{ $authedExists = true }}
+    {{ else if not $auth }}
+        {{ $unauthedExists = true }}
+    {{ end -}}
+{{ end -}}
+
+{{ if $authedExists }}
+// RegisterHandlers registers the api handlers.
+func RegisterHandlers(router *mux.Router, si ServerInterface, opts ...ServerOption) {
+    wrapper := ServerInterfaceWrapper{
+		authz:             nil,
+		handler:           si,
+		rateLimiter:       nil,
+		errorHandlerFunc:  handleError,
+    }
+
+    for _, opt := range opts {
+        if opt == nil {
+            continue
+        }
+        opt(&wrapper)
+    }
+
+    router.Use(uhttp.AuthHeaderToContextMux())
+    router.Use(uhttp.GenerateOrCopyRequestIDMux())
+
+    {{ range . }}
+        {{- $authed := .Spec.Security }}
+        {{- if $authed }}
+            router.Methods(http.Method{{.Method | lower | title }}).
+            Path("{{.Path | swaggerUriToGorillaUri}}").
+            Handler(uhttp.WrapHandler(
+                wrapper.{{.OperationId}},
+                uhttp.InstrumentCounter(TotalRequests),
+                uhttp.InstrumentCounter({{.OperationId}}TotalRequests),
+                uhttp.InstrumentDuration({{.OperationId}}RequestDuration),
+                {{ if ne .Method "GET" -}}
+                    uhttp.InstrumentRequestSize({{.OperationId}}RequestSize),
+                {{ end -}}
+                uhttp.InstrumentResponseSize({{.OperationId}}ResponseSize),
+            ))
+        {{ end }}
+    {{ end -}}
+}
+{{ end }}
+
+{{ if $unauthedExists }}
+// RegisterUnauthedHandlers registers any api handlers which do not have any authentication on them. Most services will not have any.
+func RegisterUnauthedHandlers(router *mux.Router, si ServerInterface, opts ...ServerOption) {
+    wrapper := ServerInterfaceWrapper{
+        l:                 slog.Default(),
+		authz:             nil,
+		handler:           si,
+		rateLimiter:       nil,
+		errorHandlerFunc:  handleError,
+    }
+
+    for _, opt := range opts {
+        if opt == nil {
+            continue
+        }
+        opt(&wrapper)
+    }
+
+    router.Use(uhttp.AuthHeaderToContextMux())
+    router.Use(uhttp.GenerateOrCopyRequestIDMux())
+
+    {{ range . }}
+        {{- $unauth := not .Spec.Security }}
+        {{- if $unauth }}
+            router.Methods(http.Method{{.Method | lower | title }}).
+            Path("{{.Path | swaggerUriToGorillaUri}}").
+            Handler(web.WrapHandler(
+                wrapper.{{.OperationId}},
+                metrics.InstrumentCounter(TotalRequests),
+                metrics.InstrumentCounter({{.OperationId}}TotalRequests),
+                metrics.InstrumentDuration({{.OperationId}}RequestDuration),
+                {{ if ne .Method "GET" -}}
+                    uhttp.InstrumentRequestSize({{.OperationId}}RequestSize),
+                {{ end -}}
+                metrics.InstrumentResponseSize({{.OperationId}}ResponseSize),
+            ))
+        {{ end -}}
+    {{ end -}}
+}
+{{ end -}}
