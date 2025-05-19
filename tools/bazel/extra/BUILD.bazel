@@ -1,19 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
-
-go_library(
-    name = "extra",
-    srcs = ["main.go"],
-    importpath = "github.com/Unity-Technologies/multiplay/tools/extra",
-    visibility = ["//visibility:public"],
-    deps = [
-        "@com_github_bazelbuild_buildtools//build",
-        "@com_github_bmatcuk_doublestar//:doublestar",
-        "@com_github_emicklei_proto//:proto",
-        "@com_github_google_go_cmp//cmp",
-        "@in_gopkg_yaml_v3//:yaml_v3",
-        "@net_starlark_go//starlarkstruct",
-    ],
-)
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 go_library(
     name = "extra_lib",
@@ -21,4 +6,10 @@ go_library(
     importpath = "github.com/jacobbrewer1/kubernetes-mutating-webhook/tools/bazel/extra",
     visibility = ["//visibility:private"],
     deps = ["@in_gopkg_yaml_v2//:yaml_v2"],
+)
+
+go_binary(
+    name = "extra",
+    embed = [":extra_lib"],
+    visibility = ["//visibility:public"],
 )
