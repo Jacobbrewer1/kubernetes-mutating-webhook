@@ -2,10 +2,11 @@ package main
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
+	"time"
 
 	"github.com/jacobbrewer1/web"
 	"github.com/jacobbrewer1/web/logging"
@@ -19,13 +20,8 @@ const (
 type (
 	// AppConfig is the configuration for the app.
 	AppConfig struct {
-		// pemCert is the PEM certificate for the webhook.
-		PemCert []byte
-
-		// pemKey is the PEM key for the webhook.
-		PemKey []byte
-
-		PemCA []byte
+		// activeCert is the current active certificate.
+		activeCert atomic.Value
 	}
 
 	// App is the main application struct.
@@ -35,9 +31,6 @@ type (
 
 		// config is the application configuration.
 		config *AppConfig
-
-		// certPool is the certificate pool for the webhook.
-		certPool *x509.CertPool
 	}
 )
 
@@ -51,9 +44,8 @@ func NewApp(l *slog.Logger) (*App, error) {
 	cfg := new(AppConfig)
 
 	return &App{
-		base:     base,
-		config:   cfg,
-		certPool: x509.NewCertPool(),
+		base:   base,
+		config: cfg,
 	}, nil
 }
 
@@ -65,7 +57,7 @@ func (a *App) Start() error {
 			a.Shutdown()
 		}),
 		web.WithVaultClient(),
-		web.WithInClusterKubeClient(),
+		web.WithIndefiniteAsyncTask("reload-pem", a.waitForPemExpiry(logging.LoggerWithComponent(a.base.Logger(), "reload-pem"))),
 	); err != nil {
 		return fmt.Errorf("failed to start base app: %w", err)
 	}
@@ -83,29 +75,52 @@ func (a *App) Start() error {
 }
 
 func (a *App) buildSecureServer() (*http.Server, error) {
-	// Load the PEM certificate and key from the config.
-	if a.config.PemCert == nil || a.config.PemKey == nil {
-		return nil, fmt.Errorf("PEM certificate or key not found")
-	}
-
-	// Add the PEM certificate to the cert pool.
-	if !a.certPool.AppendCertsFromPEM(a.config.PemCA) {
-		return nil, fmt.Errorf("failed to append PEM certificate to cert pool")
-	}
-
-	tlsCert, err := tls.X509KeyPair(a.config.PemCert, a.config.PemKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load PEM certificate and key: %w", err)
-	}
-
 	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{tlsCert},
-		ClientCAs:    a.certPool,
+		GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			ctx, cancel := a.base.TimeoutContext(10 * time.Second)
+			defer cancel()
+
+			var cert *tls.Certificate
+			for {
+				select {
+				case <-ctx.Done():
+					return nil, fmt.Errorf("context cancelled while getting certificate: %w", ctx.Err())
+				default:
+					// Is the current certificate still valid?
+					activeCertVal := a.config.activeCert.Load()
+					if activeCertVal == nil {
+						time.Sleep(100 * time.Millisecond)
+						continue
+					}
+
+					activeCert, ok := activeCertVal.(*tls.Certificate)
+					if !ok {
+						return nil, fmt.Errorf("failed to cast active certificate")
+					}
+
+					cert = activeCert
+				}
+
+				if cert != nil {
+					a.base.Logger().Info("certificate loaded successfully")
+					break
+				}
+			}
+
+			return cert, nil
+		},
 	}
 
 	server := &http.Server{
 		Addr:      ":8443",
 		TLSConfig: tlsConfig,
+		Handler: func() http.HandlerFunc {
+			return func(w http.ResponseWriter, r *http.Request) {
+				a.base.Logger().Debug("received request")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("Hello, world!"))
+			}
+		}(),
 	}
 
 	return server, nil
@@ -134,4 +149,6 @@ func main() {
 	if err := app.Start(); err != nil {
 		panic(fmt.Errorf("failed to start app: %w", err))
 	}
+
+	app.WaitForEnd()
 }
