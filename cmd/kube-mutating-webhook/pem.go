@@ -119,11 +119,6 @@ func loadNewPem(
 		return nil, errors.New("pem_key not found in secret data")
 	}
 
-	//ca, ok := secret.Data["issuing_ca"].(string)
-	//if !ok {
-	//	return nil, errors.New("issuing_ca not found in secret data")
-	//}
-
 	tlsCert, err := tls.X509KeyPair([]byte(pemCert), []byte(pemKey))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse x509 key pair: %w", err)

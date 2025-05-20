@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -95,13 +96,13 @@ func (a *App) buildSecureServer() (*http.Server, error) {
 
 					activeCert, ok := activeCertVal.(*tls.Certificate)
 					if !ok {
-						return nil, fmt.Errorf("failed to cast active certificate")
+						return nil, errors.New("failed to cast active certificate")
 					}
 
 					cert = activeCert
 				}
 
-				if cert != nil {
+				if cert != nil { // nolint:revive // Not required here. Clean code
 					a.base.Logger().Info("certificate loaded successfully")
 					break
 				}
@@ -109,6 +110,7 @@ func (a *App) buildSecureServer() (*http.Server, error) {
 
 			return cert, nil
 		},
+		MinVersion: tls.VersionTLS13,
 	}
 
 	server := &http.Server{
@@ -118,9 +120,10 @@ func (a *App) buildSecureServer() (*http.Server, error) {
 			return func(w http.ResponseWriter, r *http.Request) {
 				a.base.Logger().Debug("received request")
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("Hello, world!"))
+				_, _ = w.Write([]byte("Hello, world!"))
 			}
 		}(),
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	return server, nil
