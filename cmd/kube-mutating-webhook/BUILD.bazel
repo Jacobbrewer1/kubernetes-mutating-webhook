@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//tools/oci:build_container.bzl", "build_container")
 
 go_library(
     name = "kube-mutating-webhook_lib",
@@ -21,3 +22,5 @@ go_binary(
     embed = [":kube-mutating-webhook_lib"],
     visibility = ["//visibility:public"],
 )
+
+build_container("api")
