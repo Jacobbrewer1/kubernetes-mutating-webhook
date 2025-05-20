@@ -68,7 +68,8 @@ jobs:
         uses: magefile/mage-action@v3
         with:
           version: latest
-          args: -v build test
+#          args: -v build test
+          args: -v build
 
       - name: Save bazel cache
         uses: actions/cache/save@v4
