@@ -24,7 +24,7 @@ require (
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
-	github.com/getkin/kin-openapi v0.127.0 // indirect
+	github.com/getkin/kin-openapi v0.131.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.5 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
@@ -51,7 +51,6 @@ require (
 	github.com/hashicorp/vault/api/auth/approle v0.9.0 // indirect
 	github.com/hashicorp/vault/api/auth/kubernetes v0.9.0 // indirect
 	github.com/hashicorp/vault/api/auth/userpass v0.9.0 // indirect
-	github.com/invopop/yaml v0.3.1 // indirect
 	github.com/jacobbrewer1/goredis v0.1.7 // indirect
 	github.com/jacobbrewer1/uhttp v0.0.12 // indirect
 	github.com/jacobbrewer1/workerpool v0.0.4 // indirect
@@ -69,6 +68,8 @@ require (
 	github.com/nats-io/nats.go v1.41.2 // indirect
 	github.com/nats-io/nkeys v0.4.11 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
+	github.com/oasdiff/yaml v0.0.0-20250309154309-f31be36b4037 // indirect
+	github.com/oasdiff/yaml3 v0.0.0-20250309153720-d2182401db90 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
