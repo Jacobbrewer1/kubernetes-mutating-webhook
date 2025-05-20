@@ -79,11 +79,3 @@ jobs:
           args: -v ${{ env.MAGE_COMMAND }}
         env:
           PUSH_IMAGES: ${{ github.event_name != 'pull_request' }}
-
-      - name: Save bazel cache
-        uses: actions/cache/save@v4
-        if: always()
-        with:
-          key: bazel
-          path: |
-            ~/.cache/bazel
