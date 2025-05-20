@@ -1,0 +1,116 @@
+# This workflow will build a golang project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: "Code Approval"
+
+on:
+  merge_group:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+    types:
+      - opened
+      - reopened
+      - synchronize # source branch updated
+
+concurrency:
+  group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}'
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  golang-ci-lint:
+    name: Golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Sets up golang
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache-dependency-path: "**/*.sum"
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: latest
+          args: --verbose --timeout 5m
+
+  code-approval:
+    name: "Code Approval"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache-dependency-path: "**/*.sum"
+
+      - name: Restore bazel cache
+        uses: actions/cache/restore@v4
+        with:
+          key: bazel
+          path: |
+            ~/.cache/bazel
+
+      - name: Build and Test
+        uses: magefile/mage-action@v3
+        with:
+          version: latest
+#          args: -v build test
+          args: -v build
+
+      - name: Save bazel cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          key: bazel
+          path: |
+            ~/.cache/bazel
+
+  diff:
+    name: "Diff"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache-dependency-path: "**/*.sum"
+
+      - name: Restore bazel cache
+        uses: actions/cache/restore@v4
+        with:
+          key: bazel
+          path: |
+            ~/.cache/bazel
+
+      - name: Run Mage
+        uses: magefile/mage-action@v3
+        with:
+          version: latest
+          args: fixit
+
+      - name: Check Diff
+        run: |
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "[ERROR] Changes detected:"
+            git status --porcelain
+
+            echo "Make sure to run 'mage fixit' before committing."
+            exit 1
+          fi

@@ -1,0 +1,81 @@
+name: Docker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  # Use docker.io for Docker Hub if empty
+  REGISTRY: ghcr.io
+  # github.repository as <account>/<repo>
+  IMAGE_NAME: ${{ github.repository }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  docker-build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: '${{ github.token }}'
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache-dependency-path: "**/*.sum"
+
+      # Login against a Docker registry except on PR
+      # https://github.com/docker/login-action
+      - name: Log into registry
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore bazel cache
+        uses: actions/cache/restore@v4
+        with:
+          key: bazel
+          path: |
+            ~/.cache/bazel
+
+      - name: Build Mage command
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_call" ]; then
+            if [ "${{ inputs.app }}" != "all" ]; then
+              echo "mage push:one ${{ inputs.app }}"
+              echo "MAGE_COMMAND=image:one ${{ inputs.app }}" >> $GITHUB_ENV
+            else
+              echo "mage push:all"
+              echo "MAGE_COMMAND=push:all" >> $GITHUB_ENV
+            fi
+          else
+            echo "mage push:all"
+            echo "MAGE_COMMAND=push:all" >> $GITHUB_ENV
+          fi
+
+      - name: Run Mage
+        uses: magefile/mage-action@v3
+        with:
+          version: latest
+          args: -v ${{ env.MAGE_COMMAND }}
+        env:
+          PUSH_IMAGES: ${{ github.event_name != 'pull_request' }}

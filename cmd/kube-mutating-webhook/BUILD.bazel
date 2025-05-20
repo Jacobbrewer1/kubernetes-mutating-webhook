@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//tools/bazel/oci:build_container.bzl", "build_container")
+
+go_library(
+    name = "kube-mutating-webhook_lib",
+    srcs = [
+        "main.go",
+        "pem.go",
+    ],
+    importpath = "github.com/jacobbrewer1/kubernetes-mutating-webhook/cmd/kube-mutating-webhook",
+    visibility = ["//visibility:private"],
+    deps = [
+        "@com_github_jacobbrewer1_vaulty//:vaulty",
+        "@com_github_jacobbrewer1_web//:web",
+        "@com_github_jacobbrewer1_web//k8s",
+        "@com_github_jacobbrewer1_web//logging",
+    ],
+)
+
+go_binary(
+    name = "kube-mutating-webhook",
+    embed = [":kube-mutating-webhook_lib"],
+    visibility = ["//visibility:public"],
+)
+
+build_container("kube-mutating-webhook")
