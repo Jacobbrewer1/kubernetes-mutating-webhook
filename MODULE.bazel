@@ -27,6 +27,7 @@ use_repo(
     "com_github_spf13_viper",
     "in_gopkg_yaml_v2",
     "io_k8s_api",
+    "io_k8s_apimachinery",
     "org_uber_go_mock",
 )
 

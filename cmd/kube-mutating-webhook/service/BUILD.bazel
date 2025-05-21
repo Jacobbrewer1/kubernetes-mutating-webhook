@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "service",
+    srcs = [
+        "k8s.go",
+        "service.go",
+    ],
+    importpath = "github.com/jacobbrewer1/kubernetes-mutating-webhook/cmd/kube-mutating-webhook/service",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//cmd/kube-mutating-webhook/api/openapi",
+        "@com_github_jacobbrewer1_uhttp//:uhttp",
+        "@io_k8s_api//admission/v1:admission",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+    ],
+)

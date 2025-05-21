@@ -10,9 +10,13 @@ go_library(
     importpath = "github.com/jacobbrewer1/kubernetes-mutating-webhook/cmd/kube-mutating-webhook",
     visibility = ["//visibility:private"],
     deps = [
+        "//cmd/kube-mutating-webhook/api/openapi",
+        "//cmd/kube-mutating-webhook/service",
+        "@com_github_gorilla_mux//:mux",
         "@com_github_jacobbrewer1_web//:web",
         "@com_github_jacobbrewer1_web//logging",
         "@com_github_spf13_viper//:viper",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
     ],
 )
 

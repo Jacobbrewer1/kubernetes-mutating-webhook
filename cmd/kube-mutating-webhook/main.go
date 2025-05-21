@@ -102,13 +102,12 @@ func (a *App) Start() error {
 			}
 
 			w := bytes.NewBuffer(nil)
-			if _ = pem.Encode(w, &pem.Block{
+			_ = pem.Encode(w, &pem.Block{
 				Type:  "CERTIFICATE",
 				Bytes: activeCert.Certificate[0],
-			}); err != nil {
-				return fmt.Errorf("failed to encode certificate: %w", err)
-			}
+			})
 
+			// Update the CA bundle in the webhook configuration
 			for i := range webhook.Webhooks {
 				webhook.Webhooks[i].ClientConfig.CABundle = w.Bytes()
 			}
