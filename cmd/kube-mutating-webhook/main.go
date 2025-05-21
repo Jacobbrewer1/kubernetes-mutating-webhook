@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/jacobbrewer1/kubernetes-mutating-webhook/cmd/kube-mutating-webhook/api/openapi"
 	"github.com/jacobbrewer1/kubernetes-mutating-webhook/cmd/kube-mutating-webhook/service"
@@ -63,6 +66,8 @@ func (a *App) Start() error {
 		web.WithConfigWatchers(func() {
 			a.Shutdown()
 		}),
+		web.WithIndefiniteAsyncTask("reload-pem", a.waitForPemExpiry(logging.LoggerWithComponent(a.base.Logger(), "reload-pem"))),
+		web.WithInClusterKubeClient(),
 		web.WithDependencyBootstrap(func(ctx context.Context) (err error) {
 			apiServer, err = a.buildSecureServer()
 			if err != nil {
@@ -77,7 +82,44 @@ func (a *App) Start() error {
 			apiServer.Handler = r
 			return nil
 		}),
-		web.WithIndefiniteAsyncTask("reload-pem", a.waitForPemExpiry(logging.LoggerWithComponent(a.base.Logger(), "reload-pem"))),
+		web.WithDependencyBootstrap(func(ctx context.Context) (err error) {
+			timeoutCtx, cancel := a.base.TimeoutContext(60 * time.Second)
+			defer cancel()
+
+			webhook, err := a.base.KubeClient().AdmissionregistrationV1().MutatingWebhookConfigurations().Get(timeoutCtx, appName, metav1.GetOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to get webhook configuration: %w", err)
+			}
+
+			activeCertVal := a.config.activeCert.Load()
+			if activeCertVal == nil {
+				return errors.New("no active certificate found")
+			}
+
+			activeCert, ok := activeCertVal.(*tls.Certificate)
+			if !ok {
+				return errors.New("failed to cast active certificate")
+			}
+
+			w := bytes.NewBuffer(nil)
+			if _ = pem.Encode(w, &pem.Block{
+				Type:  "CERTIFICATE",
+				Bytes: activeCert.Certificate[0],
+			}); err != nil {
+				return fmt.Errorf("failed to encode certificate: %w", err)
+			}
+
+			for i := range webhook.Webhooks {
+				webhook.Webhooks[i].ClientConfig.CABundle = w.Bytes()
+			}
+
+			if _, err = a.base.KubeClient().AdmissionregistrationV1().MutatingWebhookConfigurations().Update(timeoutCtx, webhook, metav1.UpdateOptions{}); err != nil {
+				return fmt.Errorf("failed to update webhook configuration: %w", err)
+			}
+
+			a.base.Logger().Info("webhook configuration updated", slog.String("webhook-name", appName))
+			return nil
+		}),
 	); err != nil {
 		return fmt.Errorf("failed to start base app: %w", err)
 	}
