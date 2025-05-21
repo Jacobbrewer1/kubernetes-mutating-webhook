@@ -1,17 +1,23 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	cryptorand "crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"time"
 
-	"github.com/jacobbrewer1/vaulty"
+	"github.com/spf13/viper"
+
 	"github.com/jacobbrewer1/web"
-	"github.com/jacobbrewer1/web/k8s"
 	"github.com/jacobbrewer1/web/logging"
 )
 
@@ -38,8 +44,7 @@ func (a *App) waitForPemExpiry(l *slog.Logger) web.AsyncTaskFunc {
 				if err := a.reloadPemIfNeeded(
 					ctx,
 					l,
-					a.base.VaultClient(),
-					a.base.Viper().GetString("vault.pem.path"),
+					a.base.Viper(),
 					vaultPemExpiry/2, // Give a window to reload the certificate in-case of server failures, etc.
 				); err != nil {
 					l.Error("failed to reload pem certificate", slog.String(logging.KeyError, err.Error()))
@@ -54,8 +59,7 @@ func (a *App) waitForPemExpiry(l *slog.Logger) web.AsyncTaskFunc {
 func (a *App) reloadPemIfNeeded(
 	ctx context.Context,
 	l *slog.Logger,
-	vaultClient vaulty.Client,
-	pemPath string,
+	viper *viper.Viper,
 	refreshThreshold time.Duration,
 ) error {
 	// When does the pem expire?
@@ -73,7 +77,7 @@ func (a *App) reloadPemIfNeeded(
 
 		// Check if the certificate is about to expire
 		if time.Until(cert.NotAfter) >= refreshThreshold {
-			l.Debug("pem certificate is still valid")
+			l.Debug("pem certificate is still valid", slog.String("remaining", time.Until(cert.NotAfter).String()))
 			return nil
 		}
 
@@ -82,7 +86,7 @@ func (a *App) reloadPemIfNeeded(
 		l.Info("pem certificate not set, loading new one")
 	}
 
-	tlsCert, err := loadNewPem(ctx, vaultClient, pemPath)
+	tlsCert, err := loadNewPem(a.base.Viper().GetStringSlice("dns.names"), a.base.Viper().GetString("dns.common_name"))
 	if err != nil {
 		return fmt.Errorf("failed to reload pem certificate: %w", err)
 	}
@@ -94,34 +98,82 @@ func (a *App) reloadPemIfNeeded(
 }
 
 // loadNewPem loads a new PEM certificate from Vault and updates the app configuration.
-func loadNewPem(
-	ctx context.Context,
-	vaultClient vaulty.Client,
-	pemPath string,
-) (*tls.Certificate, error) {
-	vc := vaultClient.Client()
+func loadNewPem(dnsNames []string, commonName string) (*tls.Certificate, error) {
+	// CA configuration
+	ca := &x509.Certificate{
+		SerialNumber: big.NewInt(2020),
+		Subject: pkix.Name{
+			Organization: []string{"velotio.com"},
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().AddDate(1, 0, 0),
+		IsCA:                  true,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+	}
 
-	secret, err := vc.Logical().WriteWithContext(ctx, pemPath, map[string]any{
-		"common_name": fmt.Sprintf("%s.%s.svc", appName, k8s.DeployedNamespace()),
-		"ttl":         vaultPemExpiry.String(),
+	// CA private key
+	caPrivateKey, err := rsa.GenerateKey(cryptorand.Reader, 4096)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	// Self-signed CA certificate
+	caBytes, err := x509.CreateCertificate(cryptorand.Reader, ca, ca, &caPrivateKey.PublicKey, caPrivateKey)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	caPEM := bytes.NewBuffer(nil)
+	_ = pem.Encode(caPEM, &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: caBytes,
 	})
+
+	// Server cert config
+	cert := &x509.Certificate{
+		DNSNames:     dnsNames,
+		SerialNumber: big.NewInt(1658),
+		Subject: pkix.Name{
+			CommonName: commonName,
+		},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+		SubjectKeyId: []byte{1, 2, 3, 4, 6},
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+	}
+
+	// Server private key
+	serverPrivKey, err := rsa.GenerateKey(cryptorand.Reader, 4096)
 	if err != nil {
-		return nil, fmt.Errorf("failed to write pem secret: %w", err)
+		fmt.Println(err)
 	}
 
-	pemCert, ok := secret.Data["certificate"].(string)
-	if !ok {
-		return nil, errors.New("pem_cert not found in secret data")
-	}
-
-	pemKey, ok := secret.Data["private_key"].(string)
-	if !ok {
-		return nil, errors.New("pem_key not found in secret data")
-	}
-
-	tlsCert, err := tls.X509KeyPair([]byte(pemCert), []byte(pemKey))
+	// sign the server cert
+	serverCertBytes, err := x509.CreateCertificate(cryptorand.Reader, cert, ca, &serverPrivKey.PublicKey, caPrivateKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse x509 key pair: %w", err)
+		fmt.Println(err)
+	}
+
+	// PEM encode the  server cert and key
+	serverCertPEM := new(bytes.Buffer)
+	_ = pem.Encode(serverCertPEM, &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: serverCertBytes,
+	})
+
+	serverPrivateKeyPEM := bytes.NewBuffer(nil)
+	_ = pem.Encode(serverPrivateKeyPEM, &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(serverPrivKey),
+	})
+
+	// Create the TLS certificate
+	tlsCert, err := tls.X509KeyPair(serverCertPEM.Bytes(), serverPrivateKeyPEM.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create TLS certificate: %w", err)
 	}
 
 	return &tlsCert, nil

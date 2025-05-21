@@ -57,7 +57,6 @@ func (a *App) Start() error {
 		web.WithConfigWatchers(func() {
 			a.Shutdown()
 		}),
-		web.WithVaultClient(),
 		web.WithIndefiniteAsyncTask("reload-pem", a.waitForPemExpiry(logging.LoggerWithComponent(a.base.Logger(), "reload-pem"))),
 	); err != nil {
 		return fmt.Errorf("failed to start base app: %w", err)
@@ -78,37 +77,18 @@ func (a *App) Start() error {
 func (a *App) buildSecureServer() (*http.Server, error) {
 	tlsConfig := &tls.Config{
 		GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
-			ctx, cancel := a.base.TimeoutContext(10 * time.Second)
-			defer cancel()
-
-			var cert *tls.Certificate
-			for {
-				select {
-				case <-ctx.Done():
-					return nil, fmt.Errorf("context cancelled while getting certificate: %w", ctx.Err())
-				default:
-					// Is the current certificate still valid?
-					activeCertVal := a.config.activeCert.Load()
-					if activeCertVal == nil {
-						time.Sleep(100 * time.Millisecond)
-						continue
-					}
-
-					activeCert, ok := activeCertVal.(*tls.Certificate)
-					if !ok {
-						return nil, errors.New("failed to cast active certificate")
-					}
-
-					cert = activeCert
-				}
-
-				if cert != nil { // nolint:revive // Not required here. Clean code
-					a.base.Logger().Info("certificate loaded successfully")
-					break
-				}
+			// Is the current certificate still valid?
+			activeCertVal := a.config.activeCert.Load()
+			if activeCertVal == nil {
+				return nil, errors.New("no active certificate found")
 			}
 
-			return cert, nil
+			activeCert, ok := activeCertVal.(*tls.Certificate)
+			if !ok {
+				return nil, errors.New("failed to cast active certificate")
+			}
+
+			return activeCert, nil
 		},
 		MinVersion: tls.VersionTLS13,
 	}
