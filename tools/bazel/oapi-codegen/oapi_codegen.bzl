@@ -8,7 +8,7 @@ def _run_codegen(package, src, config):
             config,
         ],
         outs = [
-            "_api.raw.gen.go",
+            "_api.gen.go",
         ],
         cmd = "{} -package {} -o {} -generate types,client,gorilla,skip-prune -config {} -templates {} {}".format(
             "$(execpath @com_github_oapi_codegen_oapi_codegen_v2//cmd/oapi-codegen)",
