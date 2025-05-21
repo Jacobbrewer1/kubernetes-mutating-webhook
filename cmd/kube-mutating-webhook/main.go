@@ -13,11 +13,13 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/jacobbrewer1/kubernetes-mutating-webhook/cmd/kube-mutating-webhook/api/openapi"
 	"github.com/jacobbrewer1/kubernetes-mutating-webhook/cmd/kube-mutating-webhook/service"
 	"github.com/jacobbrewer1/web"
+	"github.com/jacobbrewer1/web/k8s"
 	"github.com/jacobbrewer1/web/logging"
 )
 
@@ -112,8 +114,29 @@ func (a *App) Start() error {
 				webhook.Webhooks[i].ClientConfig.CABundle = w.Bytes()
 			}
 
-			if _, err = a.base.KubeClient().AdmissionregistrationV1().MutatingWebhookConfigurations().Update(timeoutCtx, webhook, metav1.UpdateOptions{}); err != nil {
-				return fmt.Errorf("failed to update webhook configuration: %w", err)
+			if webhook == nil {
+				// Create the webhook configuration if it doesn't exist
+				webhook = &admissionregistrationv1.MutatingWebhookConfiguration{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: appName,
+					},
+					Webhooks: []admissionregistrationv1.MutatingWebhook{
+						{
+							Name: appName,
+							ClientConfig: admissionregistrationv1.WebhookClientConfig{
+								Service: &admissionregistrationv1.ServiceReference{
+									Namespace: k8s.DeployedNamespace(),
+									Name:      appName,
+								},
+								CABundle: w.Bytes(),
+							},
+						},
+					},
+				}
+			} else {
+				if _, err = a.base.KubeClient().AdmissionregistrationV1().MutatingWebhookConfigurations().Update(timeoutCtx, webhook, metav1.UpdateOptions{}); err != nil {
+					return fmt.Errorf("failed to update webhook configuration: %w", err)
+				}
 			}
 
 			a.base.Logger().Info("webhook configuration updated", slog.String("webhook-name", appName))
