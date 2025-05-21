@@ -284,7 +284,7 @@ func (siw *ServerInterfaceWrapper) {{$opid}}(w http.ResponseWriter, r *http.Requ
   {{with .TypeDef $opid}}
     // ------------- Body parameter for {{$opid}} for {{$contentType}} ContentType -------------
     jsonBody := new({{.TypeName}})
-    if err := siw.parseRequestBody(r, {{$contentType}}, jsonBody); err != nil {
+    if err := siw.parseRequestBody(r, "{{$contentType}}", jsonBody); err != nil {
         siw.errorHandlerFunc(ctx, l, w, err)
         return
     } else if jsonBody == nil {
@@ -301,7 +301,7 @@ func (siw *ServerInterfaceWrapper) {{$opid}}(w http.ResponseWriter, r *http.Requ
       File: new(openapi_types.File),
     }
 
-    if err := siw.parseRequestBody(r, {{$contentType}}, body.File); err != nil {
+    if err := siw.parseRequestBody(r, "{{$contentType}}", body.File); err != nil {
         siw.errorHandlerFunc(ctx, l, w, err)
         return
     }
@@ -339,7 +339,7 @@ func (siw *ServerInterfaceWrapper) {{$opid}}(w http.ResponseWriter, r *http.Requ
   }
 
   // Invoke the callback with all the unmarshalled arguments
-  resp, err := siw.handler.{{$opid}}(logging.LoggerWithComponent(l, "handler"), r{{genParamNames .PathParams}}{{if .RequiresParamObject}}, params{{end}}{{if gt (len .Bodies) 0}}, body{{end}}{{$form}})
+  resp, err := siw.handler.{{$opid}}(ctx, logging.LoggerWithComponent(l, "handler"), r{{genParamNames .PathParams}}{{if .RequiresParamObject}}, params{{end}}{{if gt (len .Bodies) 0}}, body{{end}}{{$form}})
   if err != nil {
     siw.errorHandlerFunc(ctx, l, w, err)
     return

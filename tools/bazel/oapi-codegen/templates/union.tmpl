@@ -69,7 +69,7 @@
         }
 
         {{if ne 0 (len $discriminator.Mapping)}}
-            func (t {{.TypeName}}) ValueByDiscriminator() (any, error) {
+            func (t {{.TypeName}}) ValueByDiscriminator() (interface{}, error) {
                 discriminator, err := t.Discriminator()
                 if err != nil {
                     return nil, err

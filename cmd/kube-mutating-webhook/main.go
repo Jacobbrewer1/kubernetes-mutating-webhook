@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -9,6 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gorilla/mux"
+
+	"github.com/jacobbrewer1/kubernetes-mutating-webhook/cmd/kube-mutating-webhook/api/openapi"
+	"github.com/jacobbrewer1/kubernetes-mutating-webhook/cmd/kube-mutating-webhook/service"
 	"github.com/jacobbrewer1/web"
 	"github.com/jacobbrewer1/web/logging"
 )
@@ -52,22 +57,32 @@ func NewApp(l *slog.Logger) (*App, error) {
 
 // Start initializes the app and starts the base application.
 func (a *App) Start() error {
+	var apiServer *http.Server
 	if err := a.base.Start(
 		web.WithViperConfig(),
 		web.WithConfigWatchers(func() {
 			a.Shutdown()
+		}),
+		web.WithDependencyBootstrap(func(ctx context.Context) (err error) {
+			apiServer, err = a.buildSecureServer()
+			if err != nil {
+				return fmt.Errorf("failed to build secure server: %w", err)
+			}
+			apiService := service.NewService(logging.LoggerWithComponent(a.base.Logger(), "api-service"))
+
+			r := mux.NewRouter()
+			openapi.RegisterUnauthedHandlers(r, apiService,
+				openapi.WithLogger(logging.LoggerWithComponent(a.base.Logger(), "openapi")),
+			)
+			apiServer.Handler = r
+			return nil
 		}),
 		web.WithIndefiniteAsyncTask("reload-pem", a.waitForPemExpiry(logging.LoggerWithComponent(a.base.Logger(), "reload-pem"))),
 	); err != nil {
 		return fmt.Errorf("failed to start base app: %w", err)
 	}
 
-	server, err := a.buildSecureServer()
-	if err != nil {
-		return fmt.Errorf("failed to build secure server: %w", err)
-	}
-
-	if err := a.base.StartServer("webhook-server", server); err != nil {
+	if err := a.base.StartServer("webhook-server", apiServer); err != nil {
 		return fmt.Errorf("failed to start webhook server: %w", err)
 	}
 
@@ -77,17 +92,22 @@ func (a *App) Start() error {
 func (a *App) buildSecureServer() (*http.Server, error) {
 	tlsConfig := &tls.Config{
 		GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			a.base.Logger().Debug("finding TLS certificate")
+
 			// Is the current certificate still valid?
 			activeCertVal := a.config.activeCert.Load()
 			if activeCertVal == nil {
+				a.base.Logger().Error("no active certificate found")
 				return nil, errors.New("no active certificate found")
 			}
 
 			activeCert, ok := activeCertVal.(*tls.Certificate)
 			if !ok {
+				a.base.Logger().Error("failed to cast active certificate")
 				return nil, errors.New("failed to cast active certificate")
 			}
 
+			a.base.Logger().Debug("serving TLS certificate")
 			return activeCert, nil
 		},
 		MinVersion: tls.VersionTLS13,

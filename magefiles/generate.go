@@ -12,6 +12,7 @@ import (
 func GenerateAll() {
 	mg.Deps(Init)
 	mg.Deps(mg.F(Generate.mock, false))
+	mg.Deps(mg.F(Generate.openAPI, false))
 }
 
 type Generate mg.Namespace

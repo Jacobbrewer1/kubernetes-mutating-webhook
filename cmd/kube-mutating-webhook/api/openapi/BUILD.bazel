@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//tools/bazel/oapi-codegen:oapi_codegen.bzl", "oapi_codegen")
+
+oapi_codegen(
+    src = ":api.yaml",
+    package = "openapi",
+)
+
+go_library(
+    name = "openapi",
+    srcs = ["api.gen.go"],
+    importpath = "github.com/jacobbrewer1/kubernetes-mutating-webhook/cmd/kube-mutating-webhook/api/openapi",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_gorilla_mux//:mux",
+        "@com_github_jacobbrewer1_uhttp//:uhttp",
+        "@com_github_jacobbrewer1_uhttp//common",
+        "@com_github_jacobbrewer1_web//:web",
+        "@com_github_jacobbrewer1_web//logging",
+        "@com_github_jacobbrewer1_web//metrics",
+        "@com_github_oapi_codegen_runtime//types",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_client_golang//prometheus/promauto",
+        "@io_k8s_api//admission/v1:admission",
+    ],
+)

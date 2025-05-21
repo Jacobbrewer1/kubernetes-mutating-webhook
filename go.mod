@@ -5,12 +5,17 @@ go 1.24.0
 toolchain go1.24.1
 
 require (
+	github.com/gorilla/mux v1.8.1
+	github.com/jacobbrewer1/uhttp v0.0.12
 	github.com/jacobbrewer1/web v0.0.6
 	github.com/magefile/mage v1.15.0
 	github.com/oapi-codegen/oapi-codegen/v2 v2.4.1
+	github.com/oapi-codegen/runtime v1.1.1
+	github.com/prometheus/client_golang v1.22.0
 	github.com/spf13/viper v1.20.1
 	go.uber.org/mock v0.5.2
 	gopkg.in/yaml.v2 v2.4.0
+	k8s.io/api v0.33.0
 )
 
 require (
@@ -37,7 +42,6 @@ require (
 	github.com/google/gnostic-models v0.6.9 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
@@ -53,7 +57,6 @@ require (
 	github.com/hashicorp/vault/api/auth/userpass v0.9.0 // indirect
 	github.com/invopop/yaml v0.3.1 // indirect
 	github.com/jacobbrewer1/goredis v0.1.7 // indirect
-	github.com/jacobbrewer1/uhttp v0.0.12 // indirect
 	github.com/jacobbrewer1/vaulty v0.1.15-0.20250422083501-a48cb7ba777e // indirect
 	github.com/jacobbrewer1/workerpool v0.0.4 // indirect
 	github.com/jmoiron/sqlx v1.4.0 // indirect
@@ -70,11 +73,11 @@ require (
 	github.com/nats-io/nats.go v1.41.2 // indirect
 	github.com/nats-io/nkeys v0.4.11 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
+	github.com/nxadm/tail v1.4.11 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/client_golang v1.22.0 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
@@ -89,6 +92,7 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
+	github.com/ugorji/go/codec v1.2.12 // indirect
 	github.com/vmware-labs/yaml-jsonpath v0.3.2 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
@@ -106,7 +110,6 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/api v0.33.0 // indirect
 	k8s.io/apimachinery v0.33.0 // indirect
 	k8s.io/client-go v0.33.0 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect

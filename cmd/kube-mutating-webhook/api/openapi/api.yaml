@@ -1,0 +1,31 @@
+openapi: "3.0.0"
+info:
+  title: Mutating Webhook API
+  description: This is the API for the mutating webhook that modifies incoming pod definitions.
+  version: 1.0.0
+paths:
+  /mutate:
+    post:
+      summary: Mutate incoming pod definition
+      requestBody:
+        description: Kubernetes AdmissionRequest object
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              x-go-type: '*admissionv1.AdmissionReview'
+              x-go-type-import:
+                name: admissionv1
+                path: k8s.io/api/admission/v1
+      responses:
+        '200':
+          description: Webhook Response
+          content:
+            application/json:
+              schema:
+                type: object
+                x-go-type: 'admissionv1.AdmissionReview'
+                x-go-type-import:
+                  name: admissionv1
+                  path: k8s.io/api/admission/v1
