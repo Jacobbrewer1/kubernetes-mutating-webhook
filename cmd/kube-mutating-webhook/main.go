@@ -122,6 +122,7 @@ func (a *App) Start() error {
 
 			// Update the CA bundle in the webhook configuration
 			for i := range webhook.Webhooks {
+				webhook.Name = appName
 				webhook.Webhooks[i].ClientConfig.CABundle = w.Bytes()
 			}
 

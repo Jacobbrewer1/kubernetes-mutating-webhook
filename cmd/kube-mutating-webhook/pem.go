@@ -42,7 +42,6 @@ func (a *App) waitForPemExpiry(l *slog.Logger) web.AsyncTaskFunc {
 			case <-ticker.C:
 				// Check if the PEM certificate is about to expire
 				if err := a.reloadPemIfNeeded(
-					ctx,
 					l,
 					a.base.Viper(),
 					vaultPemExpiry/2, // Give a window to reload the certificate in-case of server failures, etc.
@@ -57,7 +56,6 @@ func (a *App) waitForPemExpiry(l *slog.Logger) web.AsyncTaskFunc {
 
 // reloadPemIfNeeded checks if the PEM certificate is about to expire and reloads it if necessary.
 func (a *App) reloadPemIfNeeded(
-	ctx context.Context,
 	l *slog.Logger,
 	viper *viper.Viper,
 	refreshThreshold time.Duration,
@@ -86,7 +84,7 @@ func (a *App) reloadPemIfNeeded(
 		l.Info("pem certificate not set, loading new one")
 	}
 
-	tlsCert, err := loadNewPem(a.base.Viper().GetStringSlice("dns.names"), a.base.Viper().GetString("dns.common_name"))
+	tlsCert, err := loadNewPem(viper.GetStringSlice("dns.names"), viper.GetString("dns.common_name"))
 	if err != nil {
 		return fmt.Errorf("failed to reload pem certificate: %w", err)
 	}
