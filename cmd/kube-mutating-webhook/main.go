@@ -133,6 +133,10 @@ func (a *App) Start() error {
 						},
 					},
 				}
+
+				if _, err = a.base.KubeClient().AdmissionregistrationV1().MutatingWebhookConfigurations().Create(timeoutCtx, webhook, metav1.CreateOptions{}); err != nil {
+					return fmt.Errorf("failed to create webhook configuration: %w", err)
+				}
 			} else {
 				if _, err = a.base.KubeClient().AdmissionregistrationV1().MutatingWebhookConfigurations().Update(timeoutCtx, webhook, metav1.UpdateOptions{}); err != nil {
 					return fmt.Errorf("failed to update webhook configuration: %w", err)
