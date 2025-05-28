@@ -71,6 +71,16 @@ func (a *App) Start() error {
 		}),
 		web.WithIndefiniteAsyncTask("reload-pem", a.waitForPemExpiry(logging.LoggerWithComponent(a.base.Logger(), "reload-pem"))),
 		web.WithInClusterKubeClient(),
+		web.WithDependencyBootstrap(func(ctx context.Context) error {
+			cert, err := loadNewPem(a.base.Viper().GetStringSlice("dns.names"), a.base.Viper().GetString("dns.common_name"))
+			if err != nil {
+				return fmt.Errorf("failed to load PEM certificate: %w", err)
+			}
+
+			a.config.activeCert.Store(cert)
+			a.base.Logger().Info("PEM certificate loaded successfully", slog.String("common_name", a.base.Viper().GetString("dns.common_name")))
+			return nil
+		}),
 		web.WithDependencyBootstrap(func(ctx context.Context) (err error) {
 			apiServer, err = a.buildSecureServer()
 			if err != nil {
