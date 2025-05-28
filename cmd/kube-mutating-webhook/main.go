@@ -14,6 +14,7 @@ import (
 
 	"github.com/gorilla/mux"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	kubeerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/jacobbrewer1/kubernetes-mutating-webhook/cmd/kube-mutating-webhook/api/openapi"
@@ -89,7 +90,7 @@ func (a *App) Start() error {
 			defer cancel()
 
 			webhook, err := a.base.KubeClient().AdmissionregistrationV1().MutatingWebhookConfigurations().Get(timeoutCtx, appName, metav1.GetOptions{})
-			if err != nil {
+			if err != nil && !kubeerrors.IsNotFound(err) {
 				return fmt.Errorf("failed to get webhook configuration: %w", err)
 			}
 
