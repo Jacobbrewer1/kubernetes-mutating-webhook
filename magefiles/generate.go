@@ -18,15 +18,7 @@ func GenerateAll() {
 type Generate mg.Namespace
 
 func (Generate) Mock() error {
-	mg.Deps(mg.F(Generate.mock, true))
-	mg.Deps(mg.F(Generate.openAPI, true))
-
-	// Cover any new dependencies that may have been added by the code generation.
-	return VendorDeps()
-}
-
-func (Generate) OpenAPI() error {
-	mg.Deps(mg.F(Generate.openAPI, true))
+	mg.Deps(mg.F(Generate.mock, false))
 
 	// Cover any new dependencies that may have been added by the code generation.
 	return VendorDeps()
@@ -53,9 +45,14 @@ func (Generate) mock(shouldVendor bool) error {
 	return nil
 }
 
-func (Generate) openAPI(shouldVendor bool) error {
-	//mg.Deps(Init)
+func (Generate) OpenAPI() error {
+	mg.Deps(mg.F(Generate.openAPI, false))
 
+	// Cover any new dependencies that may have been added by the code generation.
+	return VendorDeps()
+}
+
+func (Generate) openAPI(shouldVendor bool) error {
 	args := []string{
 		"run",
 		"//:gen_openapi",

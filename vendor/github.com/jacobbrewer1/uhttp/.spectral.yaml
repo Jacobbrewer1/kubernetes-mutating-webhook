@@ -1,4 +1,0 @@
-extends: '@ibm-cloud/openapi-ruleset'
-rules:
-  ibm-no-array-responses: true
-  ibm-accept-and-return-models: true

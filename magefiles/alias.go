@@ -6,6 +6,6 @@ var Aliases = map[string]interface{}{
 	"fixit":    VendorDeps,
 	"build":    Build.All,
 	"test":     Test.Unit,
-	"install":  Dep.Install,
+	"install":  Dep.GoInstall,
 	"generate": GenerateAll,
 }

@@ -25,8 +25,8 @@ func (Dep) Get(dep string) error {
 	return VendorDeps()
 }
 
-// Install installs a golang dependency via go install.
-func (Dep) Install(dep string) error {
+// GoInstall installs a golang dependency via go install.
+func (Dep) GoInstall(dep string) error {
 	err := sh.Run(
 		"go",
 		"install",
@@ -49,9 +49,9 @@ func VendorDeps() error {
 		return err
 	}
 
-	if err := sh.Run("go", "mod", "vendor"); err != nil {
-		return err
-	}
+	//if err := sh.Run("go", "mod", "vendor"); err != nil {
+	//	return err
+	//}
 
 	if err := sh.Run("bazel", "mod", "tidy"); err != nil {
 		return err

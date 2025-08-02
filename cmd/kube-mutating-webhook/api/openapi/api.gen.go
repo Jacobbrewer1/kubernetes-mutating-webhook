@@ -21,7 +21,6 @@ import (
 	"github.com/jacobbrewer1/web"
 	"github.com/jacobbrewer1/web/logging"
 	"github.com/jacobbrewer1/web/metrics"
-	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	admissionv1 "k8s.io/api/admission/v1"
@@ -294,12 +293,13 @@ func ParsePostMutateResponse(rsp *http.Response) (*PostMutateResponse, error) {
 type ServerInterface interface {
 	// PostMutate (POST /mutate)
 	// Mutate incoming pod definition
-	PostMutate(ctx context.Context, l *slog.Logger, r *http.Request, body0 *PostMutateJSONBody) (*admissionv1.AdmissionReview, error)
+	PostMutate(ctx context.Context, l *slog.Logger, body0 *PostMutateJSONBody) (*admissionv1.AdmissionReview, error)
 }
 
-const (
-	loggingKeyError = "err"
-)
+type StatusCoder interface {
+	// StatusCode returns the HTTP status code for the error.
+	StatusCode() int
+}
 
 var (
 	// TotalRequests is a counter for the total number of requests by ALL operations.
@@ -336,168 +336,102 @@ var (
 	}, []string{"code", "method"})
 )
 
-type RateLimiterFunc = func(context.Context, *http.Request) bool
-type ErrorHandlerFunc = func(context.Context, *slog.Logger, http.ResponseWriter, error)
-
 // ServerInterfaceWrapper converts contexts to parameters.
 type ServerInterfaceWrapper struct {
-	l *slog.Logger
-
-	authz       ServerInterface
-	handler     ServerInterface
-	rateLimiter RateLimiterFunc
-
-	errorHandlerFunc ErrorHandlerFunc
-	isInternalAPI    bool
+	l                  *slog.Logger
+	isInternalAPI      bool
+	Handler            ServerInterface
+	HandlerMiddlewares []MiddlewareFunc
+	ErrorHandlerFunc   func(w http.ResponseWriter, r *http.Request, err error)
 }
 
-// WithLogger sets the logger for the server.
-func WithLogger(l *slog.Logger) ServerOption {
-	return func(s *ServerInterfaceWrapper) {
-		s.l = l
+// MiddlewareFunc is a function that takes an http.Handler and returns an http.Handler.
+type MiddlewareFunc func(http.Handler) http.Handler
+
+// ServerOption is a function that modifies the ServerInterfaceWrapper.
+type ServerOption func(*ServerInterfaceWrapper)
+
+// WithLogger sets the logger for the ServerInterfaceWrapper.
+func WithLogger(logger *slog.Logger) ServerOption {
+	return func(siw *ServerInterfaceWrapper) {
+		siw.l = logger
 	}
 }
 
-// WithAuthorization applies the passed authorization middleware to the server.
-func WithAuthorization(authz ServerInterface) ServerOption {
-	return func(s *ServerInterfaceWrapper) {
-		s.authz = authz
+// WithInternalAPI sets whether the ServerInterfaceWrapper is for an internal API.
+func WithInternalAPI(isInternal bool) ServerOption {
+	return func(siw *ServerInterfaceWrapper) {
+		siw.isInternalAPI = isInternal
 	}
 }
 
-// WithRateLimiter applies the rate limiter middleware to routes with x-global-rate-limit.
-func WithRateLimiter(rateLimiter RateLimiterFunc) ServerOption {
-	return func(s *ServerInterfaceWrapper) {
-		s.rateLimiter = rateLimiter
+// WithErrorHandlerFunc sets the error handler function for the ServerInterfaceWrapper.
+func WithErrorHandlerFunc(handlerFunc func(w http.ResponseWriter, r *http.Request, err error)) ServerOption {
+	return func(siw *ServerInterfaceWrapper) {
+		siw.ErrorHandlerFunc = handlerFunc
 	}
 }
 
-// WithErrorHandlerFunc sets the error handler function for the server.
-func WithErrorHandlerFunc(errorHandlerFunc ErrorHandlerFunc) ServerOption {
-	return func(s *ServerInterfaceWrapper) {
-		s.errorHandlerFunc = errorHandlerFunc
+// WithMiddlewareFunc adds a middleware function to the ServerInterfaceWrapper.
+func WithMiddlewareFunc(middleware MiddlewareFunc) ServerOption {
+	return func(siw *ServerInterfaceWrapper) {
+		if siw.HandlerMiddlewares == nil {
+			siw.HandlerMiddlewares = make([]MiddlewareFunc, 0)
+		}
+		siw.HandlerMiddlewares = append(siw.HandlerMiddlewares, middleware)
 	}
 }
-
-// WithInternalAPI sets the server as an internal API.
-func WithInternalAPI(isInternalAPI bool) ServerOption {
-	return func(s *ServerInterfaceWrapper) {
-		s.isInternalAPI = isInternalAPI
-	}
-}
-
-// ServerOption represents an optional feature applied to the server.
-type ServerOption func(s *ServerInterfaceWrapper)
 
 // PostMutate operation middleware
 func (siw *ServerInterfaceWrapper) PostMutate(w http.ResponseWriter, r *http.Request) {
-	l := logging.LoggerFromRequest(siw.l, r)
-	l = l.With(
-		slog.String(logging.KeyHandler, "PostMutate"),
-	)
-
 	ctx := r.Context()
-	w = uhttp.NewResponseWriter(w,
-		uhttp.WithDefaultStatusCode(http.StatusOK),
-		uhttp.WithDefaultHeader(uhttp.HeaderRequestID, uhttp.RequestIDFromContext(ctx)),
-		uhttp.WithDefaultHeader(uhttp.HeaderContentType, "application/json; charset=utf-8"),
-	)
 
-	// ------------- Body parameter for PostMutate for application/json ContentType -------------
-	jsonBody := new(PostMutateJSONRequestBody)
-	if err := siw.parseRequestBody(r, "application/json", jsonBody); err != nil {
-		siw.errorHandlerFunc(ctx, l, w, err)
-		return
-	} else if jsonBody == nil {
-		siw.errorHandlerFunc(ctx, l, w, &UnmarshalingBodyError{Err: errors.New("empty body")})
-		return
-	}
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Log the request
+		l := siw.l.With(
+			slog.String("method", r.Method),
+			slog.String("path", r.URL.Path),
+			slog.String("request_id", uhttp.RequestIDFromContext(ctx)),
+		)
 
-	// Convert the request body type to the server handler type
-	body := (*PostMutateJSONBody)(jsonBody)
+		l.Debug("Handling request")
 
-	if siw.rateLimiter != nil {
-		if !siw.rateLimiter(ctx, r) {
-			encodeErrorResponse(w, &uhttp.HTTPError{
-				ErrorMessage: common.ErrorMessage{
-					Title:     http.StatusText(http.StatusTooManyRequests),
-					Detail:    "Rate limit exceeded",
-					Status:    http.StatusTooManyRequests,
-					RequestId: uhttp.RequestIDFromContext(ctx),
-					Details: []any{
-						"Rate limit exceeded",
-					},
-				},
-			})
-			return
-		}
-	}
-
-	// Invoke the callback with all the unmarshalled arguments
-	resp, err := siw.handler.PostMutate(ctx, logging.LoggerWithComponent(l, "handler"), r, body)
-	if err != nil {
-		siw.errorHandlerFunc(ctx, l, w, err)
-		return
-	}
-
-	w.Header().Set(uhttp.HeaderContentType, "application/json; charset=utf-8")
-	w.WriteHeader(200)
-	err = json.NewEncoder(w).Encode(resp)
-	if err != nil {
-		siw.errorHandlerFunc(ctx, l, w, err)
-		return
-	}
-}
-
-// parseRequestBody parses the request body into the expected type.
-func (siw *ServerInterfaceWrapper) parseRequestBody(r *http.Request, contentType string, dest any) error {
-	if r.Body == http.NoBody {
-		return &UnmarshalingBodyError{Err: errors.New("empty body")}
-	}
-
-	switch contentType {
-	case "application/json":
 		decoder := json.NewDecoder(r.Body)
 		if !siw.isInternalAPI {
 			decoder.DisallowUnknownFields()
 		}
-		if err := decoder.Decode(dest); err != nil {
-			e := new(uhttp.HTTPError)
-			if errors.As(err, &e) {
-				return err
-			}
-			return &UnmarshalingBodyError{Err: err}
+
+		var body PostMutateJSONBody
+		if err := decoder.Decode(&body); err != nil {
+			siw.ErrorHandlerFunc(w, r, &UnmarshalingParamError{ParamName: "body", Err: err})
+			return
 		}
-	case "application/x-www-form-urlencoded":
-		bdy, err := io.ReadAll(r.Body)
+
+		resp, err := siw.Handler.PostMutate(ctx, l, &body)
 		if err != nil {
-			e := new(uhttp.HTTPError)
-			if errors.As(err, &e) {
-				return err
-			}
-			return &UnmarshalingBodyError{Err: err}
+			siw.ErrorHandlerFunc(w, r, err)
+			return
 		}
 
-		body, ok := dest.(*openapi_types.File)
-		if !ok {
-			e := new(uhttp.HTTPError)
-			if errors.As(err, &e) {
-				return err
-			}
-			return &UnmarshalingBodyError{Err: fmt.Errorf("expected *openapi_types.FormData, got %T", dest)}
-		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
 
-		body.InitFromBytes(bdy, "file")
-	default:
-		return &UnsupportedContentTypeError{ContentType: contentType}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			siw.ErrorHandlerFunc(w, r, err)
+			return
+		}
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
 	}
 
-	return nil
+	handler.ServeHTTP(w, r)
 }
 
 // handleError handles returning a correctly-formatted error to the API caller.
 func handleError(ctx context.Context, l *slog.Logger, w http.ResponseWriter, err error) {
-	l.Error("Error handling request", slog.String(loggingKeyError, err.Error()))
+	l.Error("Error handling request", slog.String(logging.KeyError, err.Error()))
 
 	e := new(uhttp.HTTPError)
 	if errors.As(err, &e) {
@@ -528,7 +462,7 @@ func handleError(ctx context.Context, l *slog.Logger, w http.ResponseWriter, err
 func encodeErrorResponse(w http.ResponseWriter, response any) error {
 	w.Header().Set(uhttp.HeaderContentType, "application/problem+json; charset=utf-8")
 
-	if e, ok := response.(uhttp.StatusCoder); ok {
+	if e, ok := response.(StatusCoder); ok {
 		w.WriteHeader(e.StatusCode())
 	}
 
@@ -540,10 +474,6 @@ type UnescapedCookieParamError struct {
 	Err       error
 }
 
-func (e *UnescapedCookieParamError) StatusCode() int {
-	return http.StatusBadRequest
-}
-
 func (e *UnescapedCookieParamError) Error() string {
 	return fmt.Sprintf("error unescaping cookie parameter '%s'", e.ParamName)
 }
@@ -552,37 +482,9 @@ func (e *UnescapedCookieParamError) Unwrap() error {
 	return e.Err
 }
 
-type UnsupportedContentTypeError struct {
-	ContentType string
-}
-
-func (e *UnsupportedContentTypeError) StatusCode() int {
-	return http.StatusUnsupportedMediaType
-}
-
-func (e *UnsupportedContentTypeError) Error() string {
-	return fmt.Sprintf("Unsupported content type: %s", e.ContentType)
-}
-
-type UnmarshalingBodyError struct {
-	Err error
-}
-
-func (e *UnmarshalingBodyError) StatusCode() int {
-	return http.StatusBadRequest
-}
-
-func (e *UnmarshalingBodyError) Error() string {
-	return fmt.Sprintf("Error unmarshaling request body: %s", e.Err.Error())
-}
-
 type UnmarshalingParamError struct {
 	ParamName string
 	Err       error
-}
-
-func (e *UnmarshalingParamError) StatusCode() int {
-	return http.StatusBadRequest
 }
 
 func (e *UnmarshalingParamError) Error() string {
@@ -597,10 +499,6 @@ type RequiredParamError struct {
 	ParamName string
 }
 
-func (e *RequiredParamError) StatusCode() int {
-	return http.StatusBadRequest
-}
-
 func (e *RequiredParamError) Error() string {
 	return fmt.Sprintf("Query argument %s is required, but not found", e.ParamName)
 }
@@ -608,10 +506,6 @@ func (e *RequiredParamError) Error() string {
 type RequiredHeaderError struct {
 	ParamName string
 	Err       error
-}
-
-func (e *RequiredHeaderError) StatusCode() int {
-	return http.StatusBadRequest
 }
 
 func (e *RequiredHeaderError) Error() string {
@@ -627,10 +521,6 @@ type InvalidParamFormatError struct {
 	Err       error
 }
 
-func (e *InvalidParamFormatError) StatusCode() int {
-	return http.StatusBadRequest
-}
-
 func (e *InvalidParamFormatError) Error() string {
 	return fmt.Sprintf("Invalid format for parameter %s: %s", e.ParamName, e.Err.Error())
 }
@@ -644,10 +534,6 @@ type TooManyValuesForParamError struct {
 	Count     int
 }
 
-func (e *TooManyValuesForParamError) StatusCode() int {
-	return http.StatusBadRequest
-}
-
 func (e *TooManyValuesForParamError) Error() string {
 	return fmt.Sprintf("Expected one value for %s, got %d", e.ParamName, e.Count)
 }
@@ -655,11 +541,9 @@ func (e *TooManyValuesForParamError) Error() string {
 // RegisterUnauthedHandlers registers any api handlers which do not have any authentication on them. Most services will not have any.
 func RegisterUnauthedHandlers(router *mux.Router, si ServerInterface, opts ...ServerOption) {
 	wrapper := ServerInterfaceWrapper{
-		l:                slog.Default(),
-		authz:            nil,
-		handler:          si,
-		rateLimiter:      nil,
-		errorHandlerFunc: handleError,
+		l:             slog.Default(),
+		isInternalAPI: false,
+		Handler:       si,
 	}
 
 	for _, opt := range opts {
@@ -669,9 +553,6 @@ func RegisterUnauthedHandlers(router *mux.Router, si ServerInterface, opts ...Se
 		opt(&wrapper)
 	}
 
-	router.Use(uhttp.AuthHeaderToContextMux())
-	router.Use(uhttp.GenerateOrCopyRequestIDMux())
-
 	router.Methods(http.MethodPost).
 		Path("/mutate").
 		Handler(web.WrapHandler(
@@ -679,7 +560,7 @@ func RegisterUnauthedHandlers(router *mux.Router, si ServerInterface, opts ...Se
 			metrics.InstrumentCounter(TotalRequests),
 			metrics.InstrumentCounter(PostMutateTotalRequests),
 			metrics.InstrumentDuration(PostMutateRequestDuration),
-			uhttp.InstrumentRequestSize(PostMutateRequestSize),
+			metrics.InstrumentRequestSize(PostMutateRequestSize),
 			metrics.InstrumentResponseSize(PostMutateResponseSize),
 		))
 }

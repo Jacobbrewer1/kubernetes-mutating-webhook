@@ -56,7 +56,8 @@ func Init() error {
 	}
 
 	mg.Deps(
-		mg.F(Dep.Install, "github.com/bazelbuild/bazelisk@latest"),
+		mg.F(Dep.GoInstall, "github.com/bazelbuild/bazelisk@latest"),
+		mg.F(Dep.GoInstall, "github.com/sqlc-dev/sqlc/cmd/sqlc@latest"),
 	)
 	return nil
 }

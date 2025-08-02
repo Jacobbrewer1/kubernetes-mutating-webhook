@@ -13,10 +13,9 @@
 // RegisterHandlers registers the api handlers.
 func RegisterHandlers(router *mux.Router, si ServerInterface, opts ...ServerOption) {
     wrapper := ServerInterfaceWrapper{
-		authz:             nil,
+        l:                 slog.Default(),
+        isInternalAPI:     false,
 		handler:           si,
-		rateLimiter:       nil,
-		errorHandlerFunc:  handleError,
     }
 
     for _, opt := range opts {
@@ -54,10 +53,8 @@ func RegisterHandlers(router *mux.Router, si ServerInterface, opts ...ServerOpti
 func RegisterUnauthedHandlers(router *mux.Router, si ServerInterface, opts ...ServerOption) {
     wrapper := ServerInterfaceWrapper{
         l:                 slog.Default(),
-		authz:             nil,
-		handler:           si,
-		rateLimiter:       nil,
-		errorHandlerFunc:  handleError,
+        isInternalAPI:     false,
+		Handler:           si,
     }
 
     for _, opt := range opts {
@@ -66,9 +63,6 @@ func RegisterUnauthedHandlers(router *mux.Router, si ServerInterface, opts ...Se
         }
         opt(&wrapper)
     }
-
-    router.Use(uhttp.AuthHeaderToContextMux())
-    router.Use(uhttp.GenerateOrCopyRequestIDMux())
 
     {{ range . }}
         {{- $unauth := not .Spec.Security }}
@@ -81,7 +75,7 @@ func RegisterUnauthedHandlers(router *mux.Router, si ServerInterface, opts ...Se
                 metrics.InstrumentCounter({{.OperationId}}TotalRequests),
                 metrics.InstrumentDuration({{.OperationId}}RequestDuration),
                 {{ if ne .Method "GET" -}}
-                    uhttp.InstrumentRequestSize({{.OperationId}}RequestSize),
+                    metrics.InstrumentRequestSize({{.OperationId}}RequestSize),
                 {{ end -}}
                 metrics.InstrumentResponseSize({{.OperationId}}ResponseSize),
             ))

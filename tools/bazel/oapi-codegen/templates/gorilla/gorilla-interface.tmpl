@@ -2,9 +2,9 @@
 type ServerInterface interface {
 {{- range .}}{{$opid := .OperationId}}
 // {{$opid}} ({{.Method}} {{.Path}})
-{{ .SummaryAsComment }}
+{{.SummaryAsComment }}
 {{- $isRawHandler := (index .Spec.Extensions "x-multiplay-raw-handler") -}}
-{{- if $isRawHandler }}
+{{ if $isRawHandler }}
     {{$opid}}(w http.ResponseWriter, r *http.Request)
 {{ else }}
     {{- $ret := "[]byte" -}}
@@ -29,7 +29,7 @@ type ServerInterface interface {
                 {{- if eq $header "Content-Range" }}{{ $hasContentRange = true }}{{ end -}}
             {{- end }}
         {{- end }}
-        {{$opid}}(ctx context.Context, l *slog.Logger, r *http.Request{{genParamArgs .PathParams}}{{if .RequiresParamObject}}, params {{$opid}}Params{{end}}{{range $i, $b := .Bodies}}, body{{$i}} *{{$opid}}JSONBody{{end}}{{$form}}) ({{ $ret }}, {{ if $hasContentRange }}*pkghttp.ContentRange,{{ end }} error)
+        {{$opid}}(ctx context.Context, l *slog.Logger{{genParamArgs .PathParams}}{{if .RequiresParamObject}}, params *{{$opid}}Params{{end}}{{range $i, $b := .Bodies}}, body{{$i}} *{{$opid}}JSONBody{{end}}{{$form}}) ({{ $ret }}, {{ if $hasContentRange }}*pkghttp.ContentRange,{{ end }} error)
     {{ end }}
 {{ end }}
 }
