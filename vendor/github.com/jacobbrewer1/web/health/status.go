@@ -11,9 +11,6 @@ import (
 )
 
 // Status represents the health status of a service.
-//
-// This type is used to define various states of a service's health, such as
-// whether it is operational, degraded, or down.
 type Status int
 
 const (
@@ -45,12 +42,6 @@ const (
 )
 
 // IsValid checks if the Status is valid.
-//
-// This method verifies whether the Status value is one of the predefined valid
-// statuses: StatusUp, StatusDown, StatusDegraded, or StatusUnknown.
-//
-// Returns:
-//   - bool: true if the Status is valid, false otherwise.
 func (s Status) IsValid() bool {
 	switch s {
 	case StatusUp, StatusDown, StatusDegraded, StatusUnknown:
@@ -60,12 +51,6 @@ func (s Status) IsValid() bool {
 }
 
 // String returns the string representation of the Status.
-//
-// This method converts the Status value to its corresponding string
-// representation. If the Status is invalid, it returns "invalid".
-//
-// Returns:
-//   - string: The string representation of the Status.
 func (s Status) String() string {
 	switch s {
 	case StatusUp:
@@ -82,13 +67,6 @@ func (s Status) String() string {
 }
 
 // MarshalJSON marshals the Status to JSON as a string.
-//
-// This method encodes the Status value as a JSON string. If the Status is
-// invalid, it returns an error.
-//
-// Returns:
-//   - []byte: The JSON-encoded string representation of the Status.
-//   - error: An error if the Status is invalid or if encoding fails.
 func (s Status) MarshalJSON() ([]byte, error) {
 	if !s.IsValid() {
 		return nil, fmt.Errorf("%s is not a valid status", s)
@@ -101,17 +79,33 @@ func (s Status) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// UnmarshalJSON unmarshals the JSON data into a Status.
+func (s *Status) UnmarshalJSON(data []byte) error {
+	var statusStr string
+	if err := json.Unmarshal(data, &statusStr); err != nil {
+		return err
+	}
+
+	switch statusStr {
+	case "up":
+		*s = StatusUp
+	case "down":
+		*s = StatusDown
+	case "degraded":
+		*s = StatusDegraded
+	case "unknown":
+		*s = StatusUnknown
+	default:
+		return fmt.Errorf("%s is not a valid status", statusStr)
+	}
+	return nil
+}
+
 // StandardStatusListener creates a StatusListenerFunc that logs status changes.
 //
 // This function returns a StatusListenerFunc, which logs the health check's status changes
 // using the provided logger. It is a standard implementation for monitoring and logging
 // health check status transitions.
-//
-// Parameters:
-//   - l (*slog.Logger): The logger used to log status changes.
-//
-// Returns:
-//   - StatusListenerFunc: A function that logs the health check's status changes.
 //
 // Example usage:
 //
