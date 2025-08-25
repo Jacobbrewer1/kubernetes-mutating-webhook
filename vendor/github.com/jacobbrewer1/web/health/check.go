@@ -7,28 +7,9 @@ import (
 )
 
 // CheckFunc defines the signature for a health check function.
-//
-// Parameters:
-//   - ctx: A context.Context object that provides a deadline, cancellation signal, or other request-scoped values.
-//
-// Returns:
-//   - An error if the check fails, or nil if the check succeeds.
-//
-// Notes:
-//   - This function is expected to perform the actual health check logic and return an appropriate error
-//     to indicate failure or success.
 type CheckFunc = func(ctx context.Context) error
 
 // StatusListenerFunc defines the signature for a function that listens for status changes in a health check.
-//
-// Parameters:
-//   - ctx: A context.Context object that provides a deadline, cancellation signal, or other request-scoped values.
-//   - name: A string representing the name of the health check whose status has changed.
-//   - state: A pointer to the State object representing the current state of the health check.
-//
-// Notes:
-//   - This function is invoked whenever the status of a health check changes.
-//   - Implementations of this function can be used to log status changes or trigger other actions.
 type StatusListenerFunc = func(ctx context.Context, name string, state *State)
 
 // Check represents a health check with configurable parameters and state tracking.
@@ -58,20 +39,6 @@ type Check struct {
 }
 
 // NewCheck creates a new health check with the specified name, check function, and optional configuration.
-//
-// Parameters:
-//   - name: A unique string identifier for the health check.
-//   - checkerFunc: A CheckFunc that defines the logic for the health check.
-//   - options: A variadic list of CheckOption functions to customize the check's behavior.
-//
-// Returns:
-//   - A pointer to a newly created Check instance.
-//
-// Notes:
-//   - The `name` parameter must be unique to avoid conflicts between health checks.
-//   - Custom statuses can be returned by using a StatusError in the `checkerFunc`.
-//     For example, a "degraded" status can be returned for partial failures.
-//   - Default timeout for the check is set to 5 seconds unless overridden by options.
 func NewCheck(name string, checkerFunc CheckFunc, options ...CheckOption) *Check {
 	c := &Check{
 		name:    name,
@@ -88,40 +55,17 @@ func NewCheck(name string, checkerFunc CheckFunc, options ...CheckOption) *Check
 }
 
 // String returns the name of the health check.
-//
-// This method provides a string representation of the health check by
-// returning its unique name.
-//
-// Returns:
-//   - A string representing the name of the health check.
 func (c *Check) String() string {
 	return c.name
 }
 
 // Check performs the health check and updates the state of the check.
-//
-// This method executes the health check function, manages the state transitions,
-// and updates the status of the check based on the results.
-//
-// Parameters:
-//   - ctx: A context.Context object that provides a deadline, cancellation signal, or other request-scoped values.
-//     If nil, an error is returned.
-//
-// Behavior:
-//   - Records the current timestamp as the last check time.
-//   - Executes the health check function within the specified timeout or cancellation context.
-//   - Updates the state of the check based on the result of the health check function.
-//   - Handles error states, including tracking consecutive failures and applying error grace periods.
-//   - Invokes the status listener function if the status changes.
-//
-// Returns:
-//   - An error if the health check fails, or nil if it succeeds.
 func (c *Check) Check(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("context cannot be nil")
 	}
 
-	now := timestamp()
+	now := time.Now().UTC()
 	c.state.lastCheckTime = now
 
 	var (

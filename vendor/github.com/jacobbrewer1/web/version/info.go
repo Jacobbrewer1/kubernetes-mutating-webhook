@@ -24,13 +24,6 @@ const (
 
 var (
 	// GitCommit returns the git commit hash of the current build.
-	//
-	// This function uses sync.OnceValue to ensure the value is computed only once
-	// and cached for subsequent calls. It retrieves build information using
-	// debug.ReadBuildInfo and searches for the revisionKey in the build settings.
-	//
-	// Returns:
-	//   - string: The git commit hash if found, otherwise an empty string.
 	GitCommit = sync.OnceValue(func() string {
 		if info, ok := debug.ReadBuildInfo(); ok {
 			for _, setting := range info.Settings {
@@ -43,15 +36,6 @@ var (
 	})
 
 	// CommitTimestamp returns the timestamp of the commit.
-	//
-	// This function uses sync.OnceValue to ensure the value is computed only once
-	// and cached for subsequent calls. It retrieves build information using
-	// debug.ReadBuildInfo and searches for the commitTimestampKey in the build settings.
-	// If the timestamp is found, it is parsed using the RFC3339 format.
-	// If parsing fails or the key is not found, it returns the zero value of time.Time.
-	//
-	// Returns:
-	//   - time.Time: The commit timestamp if found and successfully parsed, otherwise the zero value of time.Time.
 	CommitTimestamp = sync.OnceValue(func() time.Time {
 		if info, ok := debug.ReadBuildInfo(); ok {
 			for _, setting := range info.Settings {
@@ -71,15 +55,6 @@ var (
 	})
 
 	// IsModified returns whether the binary was built from a working directory containing uncommitted changes.
-	//
-	// This function uses sync.OnceValue to ensure the value is computed only once
-	// and cached for subsequent calls. It retrieves build information using
-	// debug.ReadBuildInfo and searches for the modifiedKey in the build settings.
-	// If the key is found, its value is parsed as a boolean. If parsing fails or the key is not found,
-	// the function returns false.
-	//
-	// Returns:
-	//   - bool: True if uncommitted changes were present during the build, otherwise false.
 	IsModified = sync.OnceValue(func() bool {
 		if info, ok := debug.ReadBuildInfo(); ok {
 			for _, setting := range info.Settings {
